@@ -1,0 +1,378 @@
+<script lang="ts">
+  // Local component state — use plain variables so Svelte's bindings work
+  let file: File | null = null;
+  let mode: string = "analyze";
+  let analysisPromise: Promise<any> | null = null;
+  let previewUrl: string = "";
+  let isDragging: boolean = false;
+
+  async function analyzeImage(): Promise<any> {
+    if (!file) throw new Error("No file selected");
+
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("mode", mode);
+
+    const res = await fetch("/api/vision", {
+      method: "POST",
+      body: formData
+    });
+
+    if (!res.ok) throw new Error(`Analysis failed: ${res.statusText}`);
+    return res.json();
+  }
+
+  function handleFileSelect(event: Event) {
+    const target = event.target as HTMLInputElement;
+    setFile(target.files?.[0] || null);
+  }
+
+  function handleDrop(event: DragEvent) {
+    event.preventDefault();
+    isDragging = false;
+    const files = event.dataTransfer?.files;
+    if (files?.[0]) setFile(files[0]);
+  }
+
+  function setFile(selectedFile: File | null) {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    
+    file = selectedFile;
+    if (file) {
+      previewUrl = URL.createObjectURL(file);
+      analysisPromise = analyzeImage();
+    } else {
+      previewUrl = "";
+      analysisPromise = null;
+    }
+  }
+
+  function handleDragOver(event: DragEvent) {
+    event.preventDefault();
+    isDragging = true;
+  }
+
+  function handleDragLeave() {
+    isDragging = false;
+  }
+
+  function reanalyze() {
+    if (file) analysisPromise = analyzeImage();
+  }
+
+  function clearFile() {
+    setFile(null);
+  }
+
+  function formatConfidence(confidence: number): string {
+    return `${(confidence * 100).toFixed(0)}%`;
+  }
+</script>
+
+<div class="min-h-screen bg-white p-4 md:p-8 font-sans">
+  <div class="max-w-6xl mx-auto">
+    <!-- Header -->
+    <header class="text-center mb-12">
+      <h1 class="text-3xl md:text-4xl font-light text-gray-900 mb-2 tracking-tight">Image Analyzer</h1>
+      <p class="text-gray-500 text-lg">Discover insights with AI vision</p>
+    </header>
+
+    <div class="grid lg:grid-cols-3 gap-8">
+      <!-- Left Panel - Controls -->
+      <div class="lg:col-span-1 space-y-6">
+        <!-- Upload Area -->
+        <div class="bg-gray-50 rounded-2xl p-6 border border-gray-100">
+          <h2 class="text-lg font-medium text-gray-900 mb-4">Upload Image</h2>
+          
+          {#if !file}
+            <label 
+              class="block h-48 rounded-xl border-2 border-dashed cursor-pointer transition-all duration-300
+                {isDragging 
+                  ? 'border-blue-400 bg-blue-50/50' 
+                  : 'border-gray-300 hover:border-gray-400'}"
+              ondrop={handleDrop}
+              ondragover={handleDragOver}
+              ondragleave={handleDragLeave}
+            >
+              <input type="file" accept="image/*" onchange={handleFileSelect} class="hidden" />
+              <div class="h-full flex flex-col items-center justify-center text-gray-400">
+                <svg class="w-12 h-12 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" 
+                    d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                </svg>
+                <p class="text-sm">Drag & drop or click to browse</p>
+              </div>
+            </label>
+          {:else}
+            <div class="space-y-4">
+              <div class="relative group">
+                <img src={previewUrl} alt="Preview" class="w-full h-48 object-cover rounded-lg" />
+                <button 
+                  onclick={clearFile}
+                  aria-label="Clear selected image"
+                  class="absolute top-3 right-3 w-8 h-8 bg-white/90 rounded-full flex items-center justify-center 
+                    opacity-0 group-hover:opacity-100 transition-opacity duration-300 shadow-sm"
+                >
+                  <svg class="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div class="flex items-center justify-between">
+                <div class="text-sm">
+                  <p class="font-medium text-gray-900 truncate">{file.name}</p>
+                  <p class="text-gray-500">{(file.size / 1024 / 1024).toFixed(1)} MB</p>
+                </div>
+                <button 
+                  onclick={reanalyze}
+                  class="px-4 py-2 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-800 transition-colors"
+                >
+                  Re-analyze
+                </button>
+              </div>
+            </div>
+          {/if}
+        </div>
+
+        <!-- Mode Selection -->
+        <div class="bg-gray-50 rounded-2xl p-6 border border-gray-100">
+          <h2 class="text-lg font-medium text-gray-900 mb-4">Analysis Type</h2>
+          <div class="space-y-2">
+            <label class="flex items-center p-3 rounded-lg cursor-pointer transition-colors hover:bg-gray-100">
+              <input type="radio" bind:group={mode} value="analyze" class="text-blue-600 focus:ring-blue-500" />
+              <span class="ml-3 text-gray-700">Complete Analysis</span>
+            </label>
+            <label class="flex items-center p-3 rounded-lg cursor-pointer transition-colors hover:bg-gray-100">
+              <input type="radio" bind:group={mode} value="detect" class="text-blue-600 focus:ring-blue-500" />
+              <span class="ml-3 text-gray-700">Object Detection</span>
+            </label>
+            <label class="flex items-center p-3 rounded-lg cursor-pointer transition-colors hover:bg-gray-100">
+              <input type="radio" bind:group={mode} value="describe" class="text-blue-600 focus:ring-blue-500" />
+              <span class="ml-3 text-gray-700">Description</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Panel - Results -->
+      <div class="lg:col-span-2">
+        {#if analysisPromise}
+          {#await analysisPromise}
+            <!-- Loading State -->
+            <div class="bg-gray-50 rounded-2xl p-12 border border-gray-100 flex items-center justify-center">
+              <div class="text-center">
+                <div class="inline-flex items-center justify-center">
+                  <div class="w-8 h-8 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin"></div>
+                </div>
+                <p class="mt-4 text-gray-600">Analyzing your image...</p>
+              </div>
+            </div>
+          {:then result}
+            <!-- Results -->
+            <div class="space-y-6">
+              <!-- Summary Cards -->
+              {#if result.metadata}
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div class="bg-gray-50 p-4 rounded-xl text-center">
+                    <div class="text-2xl font-light text-gray-900">{result.metadata.width}px</div>
+                    <div class="text-xs text-gray-500 mt-1">Width</div>
+                  </div>
+                  <div class="bg-gray-50 p-4 rounded-xl text-center">
+                    <div class="text-2xl font-light text-gray-900">{result.metadata.height}px</div>
+                    <div class="text-xs text-gray-500 mt-1">Height</div>
+                  </div>
+                  <div class="bg-gray-50 p-4 rounded-xl text-center">
+                    <div class="text-2xl font-light text-gray-900">{result.tags?.length || 0}</div>
+                    <div class="text-xs text-gray-500 mt-1">Tags</div>
+                  </div>
+                  <div class="bg-gray-50 p-4 rounded-xl text-center">
+                    <div class="text-2xl font-light text-gray-900">{result.objects?.length || 0}</div>
+                    <div class="text-xs text-gray-500 mt-1">Objects</div>
+                  </div>
+                </div>
+              {/if}
+
+              <!-- Description -->
+              {#if result.description?.captions?.length}
+                <div class="bg-gray-50 rounded-2xl p-6 border border-gray-100">
+                  <h3 class="text-lg font-medium text-gray-900 mb-4">Description</h3>
+                  <div class="bg-white p-5 rounded-xl border border-gray-200">
+                    <p class="text-gray-800 text-lg italic">"{result.description.captions[0].text}"</p>
+                    <div class="flex items-center mt-4 text-sm text-gray-500">
+                      <span>Confidence: {formatConfidence(result.description.captions[0].confidence)}</span>
+                    </div>
+                  </div>
+                </div>
+              {/if}
+
+              <!-- Categories -->
+              {#if result.categories?.length}
+                <div class="bg-gray-50 rounded-2xl p-6 border border-gray-100">
+                  <h3 class="text-lg font-medium text-gray-900 mb-4">Categories</h3>
+                  <div class="space-y-3">
+                    {#each result.categories as category}
+                      <div>
+                        <div class="flex justify-between items-center mb-1 text-sm">
+                          <span class="text-gray-700 capitalize">{category.name.replace('_', ' ')}</span>
+                          <span class="text-gray-600">{formatConfidence(category.score)}</span>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-1.5">
+                          <div 
+                            class="bg-blue-600 h-1.5 rounded-full transition-all duration-700 ease-out" 
+                            style={`width: ${category.score * 100}%`}
+                          ></div>
+                        </div>
+                      </div>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+
+              <!-- Objects -->
+              {#if result.objects?.length}
+                <div class="bg-gray-50 rounded-2xl p-6 border border-gray-100">
+                  <h3 class="text-lg font-medium text-gray-900 mb-4">Detected Objects</h3>
+                  <div class="grid md:grid-cols-2 gap-4">
+                    {#each result.objects as object}
+                      <div class="bg-white p-4 rounded-xl border border-gray-200">
+                        <div class="flex justify-between items-center mb-2">
+                          <span class="font-medium text-gray-900 capitalize">{object.object}</span>
+                          <span class="text-sm text-gray-600">{formatConfidence(object.confidence)}</span>
+                        </div>
+                        <div class="text-xs text-gray-500">
+                          Position: ({object.rectangle.x}, {object.rectangle.y}) • 
+                          Size: {object.rectangle.w}×{object.rectangle.h}
+                        </div>
+                      </div>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+
+              <!-- Tags -->
+              {#if result.tags?.length}
+                <div class="bg-gray-50 rounded-2xl p-6 border border-gray-100">
+                  <h3 class="text-lg font-medium text-gray-900 mb-4">Tags</h3>
+                  <div class="flex flex-wrap gap-2">
+                    {#each result.tags.slice(0, 15) as tag}
+                      <span class="inline-flex items-center px-3 py-1.5 bg-white border border-gray-200 rounded-full text-sm">
+                        {tag.name}
+                        <span class="ml-2 text-xs text-gray-500">{formatConfidence(tag.confidence)}</span>
+                      </span>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+
+              <!-- Colors -->
+              {#if result.color}
+                <div class="bg-gray-50 rounded-2xl p-6 border border-gray-100">
+                  <h3 class="text-lg font-medium text-gray-900 mb-4">Colors</h3>
+                  <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div class="text-center">
+                      <div class="w-12 h-12 mx-auto rounded-full mb-2" style="background-color: #{result.color.accentColor}"></div>
+                      <p class="text-sm text-gray-700">Accent</p>
+                      <p class="text-xs text-gray-500">#{result.color.accentColor}</p>
+                    </div>
+                    <div class="text-center">
+                      <div class="w-12 h-12 mx-auto rounded-full mb-2 bg-white border border-gray-200"></div>
+                      <p class="text-sm text-gray-700">Foreground</p>
+                      <p class="text-xs text-gray-500">{result.color.dominantColorForeground}</p>
+                    </div>
+                    <div class="text-center">
+                      <div class="w-12 h-12 mx-auto rounded-full mb-2 bg-white border border-gray-200"></div>
+                      <p class="text-sm text-gray-700">Background</p>
+                      <p class="text-xs text-gray-500">{result.color.dominantColorBackground}</p>
+                    </div>
+                    <div class="text-center">
+                      <div class="w-12 h-12 mx-auto rounded-full mb-2 flex items-center justify-center text-2xl">
+                        {result.color.isBwImg ? '⚫' : '🌈'}
+                      </div>
+                      <p class="text-sm text-gray-700">Type</p>
+                      <p class="text-xs text-gray-500">{result.color.isBwImg ? 'Black & White' : 'Color'}</p>
+                    </div>
+                  </div>
+                </div>
+              {/if}
+            </div>
+          {:catch error}
+            <!-- Error State -->
+            <div class="bg-red-50 rounded-2xl p-6 border border-red-100">
+              <div class="flex items-center">
+                <div class="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center mr-4">
+                  <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 class="font-medium text-red-800">Analysis failed</h3>
+                  <p class="text-sm text-red-600 mt-1">{error.message}</p>
+                </div>
+              </div>
+              <button 
+                onclick={reanalyze}
+                class="mt-4 px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition-colors"
+              >
+                Try Again
+              </button>
+            </div>
+          {/await}
+        {:else}
+          <!-- Initial State -->
+          <div class="bg-gray-50 rounded-2xl p-12 border border-gray-100 text-center">
+            <div class="w-16 h-16 mx-auto bg-gray-200 rounded-full flex items-center justify-center mb-6">
+              <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" 
+                  d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+            </div>
+            <h3 class="text-lg font-medium text-gray-900 mb-2">Upload an image to begin</h3>
+            <p class="text-gray-500">Supported formats: JPG, PNG, WebP</p>
+          </div>
+        {/if}
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  /* Smooth transitions for all interactive elements */
+  input[type="radio"] {
+    transition: all 0.2s ease;
+  }
+  
+  /* Custom radio button styling */
+  input[type="radio"] {
+    -webkit-appearance: none;
+    appearance: none;
+    background-color: #fff;
+    margin: 0;
+    font: inherit;
+    width: 1.15em;
+    height: 1.15em;
+    border: 1.5px solid #D1D5DB;
+    border-radius: 50%;
+    transform: translateY(-0.075em);
+    display: grid;
+    place-content: center;
+  }
+
+  input[type="radio"]::before {
+    content: "";
+    width: 0.65em;
+    height: 0.65em;
+    border-radius: 50%;
+    transform: scale(0);
+    transition: 120ms transform ease-in-out;
+    box-shadow: inset 1em 1em #2563EB;
+  }
+
+  input[type="radio"]:checked::before {
+    transform: scale(1);
+  }
+
+  input[type="radio"]:focus {
+    outline: 2px solid #2563EB;
+    outline-offset: 2px;
+  }
+</style>
